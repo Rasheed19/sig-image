@@ -162,7 +162,7 @@ class Giusti2DSignature:
 
 
 class Diehl2DSignature:
-    def _brute_force_sum_expression(self, arr1: np.ndarray, arr2: np.ndarray) -> float:
+    def _brute_force(self, arr1: np.ndarray, arr2: np.ndarray) -> float:
         result = 0.0
         n = arr1.shape[0]
 
@@ -218,12 +218,3 @@ class Diehl2DSignature:
                 for (i, j) in channel_pairs
             ]
         )
-
-
-if __name__ == "__main__":
-    N = 5  # Example size
-    xi = np.random.randn(N, N)
-
-    zh = Zhang2DSignature()
-    print("brute force", zh._brute_force(xi))
-    print("vectorized", zh._sum_expression_hat(xi, N, N))
