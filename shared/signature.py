@@ -1,220 +1,228 @@
 import itertools
 
-import numpy as np
+import torch
 
 
 class Zhang2DSignature:
-    def _brute_force(self, arr: np.ndarray) -> float:
-        n = arr.shape[0]
-        result = 0.0
-        result_hat = 0.0
-        for k1 in range(n - 1):
-            for k2 in range(n - 1):
-                result += self._expression(arr=arr, k1=k1, k2=k2)
-                result_hat += self._expression_hat(arr=arr, k1=k1, k2=k2)
+    def _inner_double_sum(self, tensor: torch.Tensor, k1: int, k2: int) -> float:
+        return torch.sum(
+            (tensor[1:k1, 0 : k2 - 1] - tensor[0 : k1 - 1, 0 : k2 - 1])
+            * (tensor[0 : k1 - 1, 1:k2] - tensor[0 : k1 - 1, 0 : k2 - 1])
+        ).item()
 
-        return result, result_hat
+    def _first_level_sig(self, image: torch.Tensor) -> list[float]:
+        sig = []
 
-    def _expression(self, arr: np.ndarray, k1: int, k2: int) -> float:
-        return arr[k1 + 1, k2 + 1] - arr[k1, k2 + 1] - arr[k1 + 1, k2] + arr[k1, k2]
+        for tensor in image:
+            n = tensor.shape[0]
 
-    def _expression_hat(self, arr: np.ndarray, k1: int, k2: int) -> float:
-        return (arr[k1 + 1, k2] - arr[k1, k2]) * (arr[k1, k2 + 1] - arr[k1, k2])
+            x_i = (
+                tensor[n - 1, n - 1]
+                - tensor[0, n - 1]
+                - tensor[n - 1, 0]
+                + tensor[0, 0]
+            ).item()
 
-    def _sum_expression(self, arr: np.ndarray, n: int, m: int) -> float:
-        return np.sum(
-            arr[1:n, 1:m]  # arr[k1+1, k2+1]
-            - arr[0 : n - 1, 1:m]  # arr[k1, k2+1]
-            - arr[1:n, 0 : m - 1]  # arr[k1+1, k2]
-            + arr[0 : n - 1, 0 : m - 1]  # arr[k1, k2]
-        )
+            x_i_hat = self._inner_double_sum(tensor=tensor, k1=n, k2=n)
 
-    def _sum_expression_hat(self, arr: np.ndarray, n: int, m: int) -> float:
-        return np.sum(
-            (arr[1:n, 0 : m - 1] - arr[0 : n - 1, 0 : m - 1])
-            * (arr[0 : n - 1, 1:m] - arr[0 : n - 1, 0 : m - 1])
-        )
+            sig.extend((x_i, x_i_hat))
 
-    def first_level_sig(self, image: np.ndarray) -> np.ndarray:
-        sig = np.zeros(shape=2 * image.shape[0], dtype="float")
-
-        for i, arr in enumerate(image):
-            n = arr.shape[0]
-            sig[2 * i : 2 * (i + 1)] = (
-                self._sum_expression(arr=arr, n=n, m=n),
-                self._sum_expression_hat(arr=arr, n=n, m=n),
-            )
         return sig
 
-    def second_level_sig(self, image: np.ndarray) -> np.ndarray:
+    def _second_level_sig(self, image: torch.Tensor) -> list[float]:
         channel = image.shape[0]
-        sig = np.zeros(shape=4 * channel**2, dtype="float")
-        channel_pairs = list(itertools.product(range(channel), range(channel)))
+        channel_pairs = list(
+            itertools.product(range(channel), range(channel))
+        )  # TODO: this includes interaction terms
+        # channel_pairs = [(i, i) for i in range(channel)]  # for the case i = j
 
-        for i, pair in enumerate(channel_pairs):
-            arr_sum = np.zeros(4)
+        x_i_j_list = []
+        x_i_j_hat_list = []
 
-            for k1 in range(image[pair[0]].shape[0] - 1):
-                for k2 in range(image[pair[0]].shape[0] - 1):
-                    if (
-                        k1 == 0 or k2 == 0
-                    ):  # FIXME: unclear how to fix/implement the inner double sum
-                        continue
-                    arr_sum += np.array(
-                        [
-                            self._sum_expression(arr=image[pair[0]], n=k1, m=k2)
-                            * self._expression(arr=image[pair[1]], k1=k1, k2=k2),
-                            self._sum_expression_hat(arr=image[pair[0]], n=k1, m=k2)
-                            * self._expression_hat(arr=image[pair[1]], k1=k1, k2=k2),
-                            self._sum_expression_hat(arr=image[pair[0]], n=k1, m=k2)
-                            * self._expression(arr=image[pair[1]], k1=k1, k2=k2),
-                            self._sum_expression(arr=image[pair[0]], n=k1, m=k2)
-                            * self._expression_hat(arr=image[pair[1]], k1=k1, k2=k2),
-                        ]
+        for pair in channel_pairs:
+            tensor_i, tensor_j = image[pair[0]], image[pair[1]]
+            n = tensor_i.shape[0]
+
+            x_i_j = torch.sum(
+                (
+                    tensor_i[0 : n - 1, 0 : n - 1]
+                    - tensor_i[0, 0 : n - 1]
+                    - tensor_i[0 : n - 1, 0].reshape(
+                        -1, 1
+                    )  # must be reshaped to match column definition; the term extracts column
+                    + tensor_i[0, 0]
+                )
+                * (
+                    tensor_j[1:n, 1:n]
+                    - tensor_j[0 : n - 1, 1:n]
+                    - tensor_j[1:n, 0 : n - 1]
+                    + tensor_j[0 : n - 1, 0 : n - 1]
+                )
+            ).item()
+
+            x_i_j_hat = torch.sum(
+                (
+                    tensor_i[0 : n - 1, 0 : n - 1]
+                    - tensor_i[0, 0 : n - 1]
+                    - tensor_i[0 : n - 1, 0].reshape(
+                        -1, 1
+                    )  # must be reshaped to match column definition; the term extracts column
+                    + tensor_i[0, 0]
+                )
+                * (tensor_j[1:n, 0 : n - 1] - tensor_j[0 : n - 1, 0 : n - 1])
+                * (tensor_j[0 : n - 1, 1:n] - tensor_j[0 : n - 1, 0 : n - 1])
+            ).item()
+
+            x_i_j_list.append(x_i_j)
+            x_i_j_hat_list.append(x_i_j_hat)
+
+        x_i_hat_j_hat_list = []
+        x_i_hat_j_list = []
+
+        for pair in channel_pairs:
+            x_i_hat_j_hat = 0.0
+            x_i_hat_j = 0.0
+
+            tensor_i, tensor_j = image[pair[0]], image[pair[1]]
+            n = tensor_i.shape[0]
+
+            for k1 in range(n - 1):
+                for k2 in range(n - 1):
+                    x_i_hat_j_hat += (
+                        self._inner_double_sum(tensor=tensor_i, k1=k1 + 1, k2=k2 + 1)
+                        * (tensor_j[k1 + 1, k2] - tensor_j[k1, k2])
+                        * (tensor_j[k1, k2 + 1] - tensor_j[k1, k2])
                     )
-            sig[4 * i : 4 * (i + 1)] = arr_sum
+                    x_i_hat_j += (
+                        self._inner_double_sum(tensor=tensor_i, k1=k1 + 1, k2=k2 + 1)
+                        * tensor_j[k1 + 1, k2 + 1]
+                        - tensor_j[k1, k2 + 1]
+                        - tensor_j[k1 + 1, k2]
+                        + tensor_j[k1, k2]
+                    )
 
-        return sig
+            x_i_hat_j_hat_list.append(x_i_hat_j_hat)
+            x_i_hat_j_list.append(x_i_hat_j)
 
-
-class Giusti2DSignature:
-    def _permutation(self, x: int, deg: int) -> int:
-        assert (x in [1, 2]) and (deg in [1, 2]), "x and deg must be in [1, 2]."
-
-        if deg == 2:
-            if x == 1:
-                return 2
-            else:
-                return 1
-        else:
-            return x
-
-    def _injection(self, x: int, deg: int) -> int:
-        assert (x in [1, 2]) and (
-            deg in [1, 2, 3]
-        ), "x must be in [1, 2] and deg must be in [1, 2, 3]."
-
-        if deg == 2:
-            if x == 2:
-                return 3
-            else:
-                return 1
-        elif deg == 3:
-            if x == 1:
-                return 2
-            else:
-                return 3
-        else:
-            return x
-
-    def _expression(
-        self, arr1: np.ndarray, arr2: np.ndarray, k1: int, k2: int
-    ) -> float:
         return (
-            (arr1[k1 + 1, k2] - arr1[k1, k2]) * (arr2[k1, k2 + 1] - arr2[k1, k2])
-        ) - ((arr1[k1, k2 + 1] - arr1[k1, k2]) * (arr2[k1 + 1, k2] - arr2[k1, k2]))
-
-    def _brute_force(self, arr1: np.ndarray, arr2: np.ndarray) -> float:
-        result = 0.0
-        n = arr1.shape[0]
-
-        for k1 in range(n - 1):
-            for k2 in range(n - 1):
-                result += self._expression(arr1=arr1, arr2=arr2, k1=k1, k2=k2)
-
-        return result
-
-    def _sum_expression(self, arr1: np.ndarray, arr2: np.ndarray) -> float:
-        n = arr1.shape[0]
-        return np.sum(
-            (
-                (arr1[1:n, 0 : n - 1] - arr1[0 : n - 1, 0 : n - 1])
-                * (arr2[0 : n - 1, 1:n] - arr2[0 : n - 1, 0 : n - 1])
+            torch.vstack(
+                tensors=tuple(
+                    torch.Tensor(lst)
+                    for lst in [
+                        x_i_j_list,
+                        x_i_hat_j_hat_list,
+                        x_i_hat_j_list,
+                        x_i_j_hat_list,
+                    ]
+                )
             )
-            - (
-                (arr1[0 : n - 1, 1:n] - arr1[0 : n - 1, 0 : n - 1])
-                * (arr2[1:n, 0 : n - 1] - arr2[0 : n - 1, 0 : n - 1])
-            )
+            .T.flatten()
+            .tolist()
         )
 
-    def first_level_sig(self, image: np.ndarray) -> np.ndarray:
-        assert (
-            image.shape[0] == 3
-        ), f"Number of channels in image must be 3 but {image.shape[0]} is given."
+    def _all_sig_levels(self, image: torch.Tensor) -> list[float]:
+        all_levels = self._first_level_sig(image=image)
+        all_levels.extend(self._second_level_sig(image=image))
 
-        channel_pairs = list(itertools.combinations([0, 1, 2], 2))
+        return all_levels
 
-        return np.array(
-            [
-                self._sum_expression(arr1=image[c1], arr2=image[c2])
-                for (c1, c2) in channel_pairs
-            ]
-        )
+    def calculate_batch_sig(self, x: torch.Tensor, depth: int) -> torch.Tensor:
+        assert depth in (1, 2), "Depth can only take value 1 or 2."
 
-    def second_level_sig(self, image: np.ndarray) -> np.ndarray:
-        assert (
-            image.shape[0] == 3
-        ), f"Number of channels in image must be 3 but {image.shape[0]} is given."
+        if depth == 1:
+            return torch.Tensor(list(map(self._first_level_sig, x)))
 
-        # FIXME: need clarification on how to generate all possible combinations
+        return torch.Tensor(list(map(self._all_sig_levels, x)))
 
-        raise NotImplementedError()
+    def calculate_feature_dim(self, channels: int, depth: int) -> int:
+        # level 1 + level 2 number of features
+        assert depth in (1, 2), "Depth can only take value 1 or 2."
+        return (
+            channels * 2 if depth == 1 else 2 * channels * (1 + 2 * channels)
+        )  # TODO: includes iteraction terms
+        # return (
+        #     channels * 2 if depth == 1 else 6 * channels
+        # )  # 2c + 4c when no interaction terms are considered
 
 
 class Diehl2DSignature:
-    def _brute_force(self, arr1: np.ndarray, arr2: np.ndarray) -> float:
+    def _brute_force(self, tensor1: torch.Tensor, tensor2: torch.Tensor) -> float:
         result = 0.0
-        n = arr1.shape[0]
+        n = tensor1.shape[0]
 
         for k1 in range(n - 1):
             for k2 in range(n - 1):
-                diff1 = arr1[k1, k2] - arr1[k1, 0] - arr1[0, k2] + arr1[0, 0]
+                diff1 = (
+                    tensor1[k1, k2] - tensor1[k1, 0] - tensor1[0, k2] + tensor1[0, 0]
+                )
                 diff2 = (
-                    arr2[k1 + 1, k2 + 1]
-                    - arr2[k1, k2 + 1]
-                    - arr2[k1 + 1, k2]
-                    + arr2[k1, k2]
+                    tensor2[k1 + 1, k2 + 1]
+                    - tensor2[k1, k2 + 1]
+                    - tensor2[k1 + 1, k2]
+                    + tensor2[k1, k2]
                 )
 
                 result += diff1 * diff2
 
         return result
 
-    def _sum_expression(self, arr1: np.ndarray, arr2: np.ndarray):
-        n = arr1.shape[0]
+    def _sum_expression(self, tensor1: torch.Tensor, tensor2: torch.Tensor):
+        n = tensor1.shape[0]
 
-        return np.sum(
+        return torch.sum(
             (
-                arr1[0 : n - 1, 0 : n - 1]
-                - arr1[0 : n - 1, 0].reshape(
+                tensor1[0 : n - 1, 0 : n - 1]
+                - tensor1[0 : n - 1, 0].reshape(
                     -1, 1
                 )  # must be reshaped to match column definition; the term extracts column
-                - arr1[0, 0 : n - 1]
-                + arr1[0, 0]
+                - tensor1[0, 0 : n - 1]
+                + tensor1[0, 0]
             )
             * (
-                arr2[1:n, 1:n]
-                - arr2[0 : n - 1, 1:n]
-                - arr2[1:n, 0 : n - 1]
-                + arr2[0 : n - 1, 0 : n - 1]
+                tensor2[1:n, 1:n]
+                - tensor2[0 : n - 1, 1:n]
+                - tensor2[1:n, 0 : n - 1]
+                + tensor2[0 : n - 1, 0 : n - 1]
             )
         )
 
-    def _expression(self, arr: np.ndarray) -> float:
-        n = arr.shape[0]
+    def _expression(self, tensor: torch.Tensor) -> float:
+        n = tensor.shape[0]
 
-        return arr[n - 1, n - 1] - arr[n - 1, 0] - arr[0, n - 1] + arr[0, 0]
+        return tensor[n - 1, n - 1] - tensor[n - 1, 0] - tensor[0, n - 1] + tensor[0, 0]
 
-    def first_level_sig(self, image: np.ndarray) -> np.ndarray:
-        return np.array([self._expression(arr=arr) for arr in image])
+    def _first_level_sig(self, image: torch.Tensor) -> list[float]:
+        return [self._expression(tensor=arr) for arr in image]
 
-    def second_level_sig(self, image: np.ndarray) -> np.ndarray:
+    def _second_level_sig(self, image: torch.Tensor) -> list[float]:
         channel = image.shape[0]
         channel_pairs = list(itertools.product(range(channel), range(channel)))
 
-        return np.array(
-            [
-                self._sum_expression(arr1=image[i], arr2=image[j])
-                for (i, j) in channel_pairs
-            ]
+        return [
+            self._sum_expression(tensor1=image[i], tensor2=image[j])
+            for (i, j) in channel_pairs
+        ]
+
+    def _all_sig_levels(self, image: torch.Tensor) -> list[float]:
+        all_levels = self._first_level_sig(image=image)
+        all_levels.extend(self._second_level_sig(image=image))
+
+        return all_levels
+
+    def calculate_batch_sig(self, x: torch.Tensor, depth: int) -> torch.Tensor:
+        assert depth in (1, 2), "Depth can only take value 1 or 2."
+
+        if depth == 1:
+            return torch.Tensor(list(map(self._first_level_sig, x)))
+
+        return torch.Tensor(list(map(self._all_sig_levels, x)))
+
+    def calculate_feature_dim(self, channels: int, depth: int) -> int:
+        # level 1 + level 2 number of features
+        assert depth in (1, 2), "Depth can only take value 1 or 2."
+        return (
+            channels
+            if depth == 1
+            else channels
+            + len(list(itertools.product(range(channels), range(channels))))
         )

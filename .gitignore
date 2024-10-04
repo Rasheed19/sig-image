@@ -158,6 +158,12 @@ cython_debug/
 .python-version
 sigimg.venv/
 literature/
+data/
+plots/
+archived/
+models/
+check.ipynb
+check_mvtect.ipynb
 
 
 # PyCharm
