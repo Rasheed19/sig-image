@@ -9,5 +9,5 @@ PyYAML==6.0.1
 click==8.1.7
 pandas
 seaborn
-iisignature==0.24
 xgboost
+tqdm

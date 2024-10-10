@@ -2,8 +2,8 @@ from enum import IntEnum, StrEnum
 
 
 class ModelMode(StrEnum):
-    BENCHMARK = "benchmark"
-    SIGNATURE = "signature"
+    POOL = "pool"
+    BLOCK = "block"
 
 
 class PipelineMode(StrEnum):

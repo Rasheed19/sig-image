@@ -1,7 +1,7 @@
 import click
 
 from pipelines import training_pipeline
-from shared.definition import ModelMode
+from shared.definition import ModelMode, SignatureMode
 
 
 @click.command(
@@ -11,12 +11,22 @@ from shared.definition import ModelMode
 )
 @click.option(
     "--model-mode",
-    default=ModelMode.BENCHMARK,
     type=click.STRING,
-    help=f"""Specify which mode to train to train a model.
-    Input must be in the set {[m for m in ModelMode]}
-    Default to {ModelMode.BENCHMARK}.
+    help=f"""Specify which model type to train.
+    Input must be in the set {[m.value for m in ModelMode]}.
         """,
+)
+@click.option(
+    "--sig-mode",
+    type=click.STRING,
+    help=f"""Specify which method to use to calculate 2D signature.
+    Input must be in the set {[m.value for m in SignatureMode]}.
+        """,
+)
+@click.option(
+    "--sig-depth",
+    type=click.IntRange(min=1, max=2),
+    help="Specify the depth to which 2D signature will be calculated up to.",
 )
 @click.option(
     "--batch-size",
@@ -35,12 +45,16 @@ from shared.definition import ModelMode
         """,
 )
 def main(
-    model_mode: str = ModelMode.BENCHMARK,
+    model_mode: str,
+    sig_mode: str,
+    sig_depth: int,
     batch_size: int = 32,
     epoch: int = 2,
 ) -> None:
     training_pipeline(
         model_mode=model_mode,
+        sig_mode=sig_mode,
+        sig_depth=sig_depth,
         batch_size=batch_size,
         epoch=epoch,
     )

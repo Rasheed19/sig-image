@@ -1,6 +1,5 @@
 import matplotlib.pyplot as plt
 import matplotlib.ticker as tck
-import numpy as np
 
 from shared.helper import (
     get_rcparams,
@@ -45,12 +44,9 @@ def set_size(
     return (fig_width_in, fig_height_in)
 
 
-def plot_training_pipeline_history(
-    history: dict, epoch: int, model_mode: str, batch_size: int
-) -> None:
+def plot_training_pipeline_history(history: dict, artifact_tag: str) -> None:
     fig = plt.figure(figsize=set_size(subplots=(1, 2)))
     fig_labels = ("a", "b")
-    epoch_array = np.arange(epoch) + 1
 
     for i, m in enumerate(["loss", "accuracy"]):
         ax = fig.add_subplot(1, 2, i + 1)
@@ -65,7 +61,7 @@ def plot_training_pipeline_history(
 
         for d, c, style in zip(["train", "test"], ["darkcyan", "crimson"], ["-", "--"]):
             ax.plot(
-                epoch_array,
+                history["epochs"],
                 history[f"{d}_{m}"],
                 color=c,
                 label=f"{d}".capitalize(),
@@ -79,7 +75,7 @@ def plot_training_pipeline_history(
     fig.legend(handles, labels, loc="lower center", ncol=2, bbox_to_anchor=(0.5, -0.2))
 
     plt.savefig(
-        fname=f"./plots/history_plot_model={model_mode}_batch_size={batch_size}_epochs={epoch}.pdf",
+        fname=f"./plots/{artifact_tag}.pdf",
         bbox_inches="tight",
     )
 

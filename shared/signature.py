@@ -11,23 +11,25 @@ class Zhang2DSignature:
         ).item()
 
     def _first_level_sig(self, image: torch.Tensor) -> list[float]:
-        sig = []
-
-        for tensor in image:
-            n = tensor.shape[0]
-
-            x_i = (
-                tensor[n - 1, n - 1]
-                - tensor[0, n - 1]
-                - tensor[n - 1, 0]
-                + tensor[0, 0]
-            ).item()
-
-            x_i_hat = self._inner_double_sum(tensor=tensor, k1=n, k2=n)
-
-            sig.extend((x_i, x_i_hat))
-
-        return sig
+        n = image[0].shape[0]
+        return (
+            torch.Tensor(
+                [
+                    (
+                        (
+                            tensor[n - 1, n - 1]
+                            - tensor[0, n - 1]
+                            - tensor[n - 1, 0]
+                            + tensor[0, 0]
+                        ).item(),
+                        self._inner_double_sum(tensor=tensor, k1=n, k2=n),
+                    )
+                    for tensor in image
+                ]
+            )
+            .flatten()
+            .tolist()
+        )
 
     def _second_level_sig(self, image: torch.Tensor) -> list[float]:
         channel = image.shape[0]
@@ -36,10 +38,11 @@ class Zhang2DSignature:
         )  # TODO: this includes interaction terms
         # channel_pairs = [(i, i) for i in range(channel)]  # for the case i = j
 
-        x_i_j_list = []
-        x_i_j_hat_list = []
+        sig = torch.zeros(
+            (len(channel_pairs), 4)
+        )  # col 0: x_i_j, col 1: x_i_hat_j_hat, col 2: x_i_hat_j, col 3: x_i_j_hat
 
-        for pair in channel_pairs:
+        for i, pair in enumerate(channel_pairs):
             tensor_i, tensor_j = image[pair[0]], image[pair[1]]
             n = tensor_i.shape[0]
 
@@ -73,18 +76,11 @@ class Zhang2DSignature:
                 * (tensor_j[0 : n - 1, 1:n] - tensor_j[0 : n - 1, 0 : n - 1])
             ).item()
 
-            x_i_j_list.append(x_i_j)
-            x_i_j_hat_list.append(x_i_j_hat)
+            sig[i, 0] = x_i_j
+            sig[i, 3] = x_i_j_hat
 
-        x_i_hat_j_hat_list = []
-        x_i_hat_j_list = []
-
-        for pair in channel_pairs:
             x_i_hat_j_hat = 0.0
             x_i_hat_j = 0.0
-
-            tensor_i, tensor_j = image[pair[0]], image[pair[1]]
-            n = tensor_i.shape[0]
 
             for k1 in range(n - 1):
                 for k2 in range(n - 1):
@@ -93,32 +89,19 @@ class Zhang2DSignature:
                         * (tensor_j[k1 + 1, k2] - tensor_j[k1, k2])
                         * (tensor_j[k1, k2 + 1] - tensor_j[k1, k2])
                     )
-                    x_i_hat_j += (
-                        self._inner_double_sum(tensor=tensor_i, k1=k1 + 1, k2=k2 + 1)
-                        * tensor_j[k1 + 1, k2 + 1]
+                    x_i_hat_j += self._inner_double_sum(
+                        tensor=tensor_i, k1=k1 + 1, k2=k2 + 1
+                    ) * (
+                        tensor_j[k1 + 1, k2 + 1]
                         - tensor_j[k1, k2 + 1]
                         - tensor_j[k1 + 1, k2]
                         + tensor_j[k1, k2]
                     )
 
-            x_i_hat_j_hat_list.append(x_i_hat_j_hat)
-            x_i_hat_j_list.append(x_i_hat_j)
+            sig[i, 1] = x_i_hat_j_hat
+            sig[i, 2] = x_i_hat_j
 
-        return (
-            torch.vstack(
-                tensors=tuple(
-                    torch.Tensor(lst)
-                    for lst in [
-                        x_i_j_list,
-                        x_i_hat_j_hat_list,
-                        x_i_hat_j_list,
-                        x_i_j_hat_list,
-                    ]
-                )
-            )
-            .T.flatten()
-            .tolist()
-        )
+        return sig.flatten().tolist()
 
     def _all_sig_levels(self, image: torch.Tensor) -> list[float]:
         all_levels = self._first_level_sig(image=image)
@@ -166,7 +149,7 @@ class Diehl2DSignature:
 
         return result
 
-    def _sum_expression(self, tensor1: torch.Tensor, tensor2: torch.Tensor):
+    def _sum_expression(self, tensor1: torch.Tensor, tensor2: torch.Tensor) -> float:
         n = tensor1.shape[0]
 
         return torch.sum(
@@ -184,12 +167,14 @@ class Diehl2DSignature:
                 - tensor2[1:n, 0 : n - 1]
                 + tensor2[0 : n - 1, 0 : n - 1]
             )
-        )
+        ).item()
 
     def _expression(self, tensor: torch.Tensor) -> float:
         n = tensor.shape[0]
 
-        return tensor[n - 1, n - 1] - tensor[n - 1, 0] - tensor[0, n - 1] + tensor[0, 0]
+        return (
+            tensor[n - 1, n - 1] - tensor[n - 1, 0] - tensor[0, n - 1] + tensor[0, 0]
+        ).item()
 
     def _first_level_sig(self, image: torch.Tensor) -> list[float]:
         return [self._expression(tensor=arr) for arr in image]
@@ -226,3 +211,12 @@ class Diehl2DSignature:
             else channels
             + len(list(itertools.product(range(channels), range(channels))))
         )
+
+
+if __name__ == "__main__":
+    batch = torch.ones(10000, 8, 8, 8)
+
+    zs = Diehl2DSignature()
+    res = zs.calculate_batch_sig(batch, 2)
+    print(res)
+    print(res.shape)

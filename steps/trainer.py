@@ -1,160 +1,86 @@
+import copy
+
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from shared.definition import ModelMode, SignatureMode
+from shared.definition import ModelMode
 from shared.helper import dump_data
+from shared.models import (
+    SignatureAsBlockModel,
+    SignaturedAsPoolingModel,
+    load_pretrained_model,
+)
 from shared.plotter import plot_training_pipeline_history
-from shared.signature import Diehl2DSignature, Zhang2DSignature
-
-
-def create_benchmark_model(benchmark_model_name: str) -> nn.Module:
-    model = torch.hub.load(
-        repo_or_dir="chenyaofo/pytorch-cifar-models",
-        model=benchmark_model_name,
-        trust_repo=True,
-        pretrained=True,
-    )
-
-    return model
-
-
-class Signature2DPoolingLayer(nn.Module):
-    def __init__(self, mode: str, channels: int, depth: int):
-        super().__init__()
-
-        self.mode = mode
-        self.channels = channels
-        self.depth = depth
-
-        if self.mode == SignatureMode.ZHANG:
-            self.sig = Zhang2DSignature()
-        elif self.mode == SignatureMode.DIEHL:
-            self.sig = Diehl2DSignature()
-        else:
-            raise ValueError(
-                f"Signature mode must be an element of {[m for m in SignatureMode]}"
-            )
-
-    def calculate_feature_dim(self):
-        return self.sig.calculate_feature_dim(channels=self.channels, depth=self.depth)
-
-    def forward(self, x):
-        return self.sig.calculate_batch_sig(x=x, depth=self.depth)
-
-
-def create_signature_informed_model(
-    num_classes: int,
-    mode: str,
-    depth: int,
-    channels: int | None = None,
-    replace_avgpool: bool = False,
-) -> nn.Module:
-    model = create_benchmark_model(
-        benchmark_model_name="cifar10_resnet20",  # TODO: make this an StrEnum
-    )
-
-    if replace_avgpool:
-        pen_channel = model.layer3[2].bn2.num_features
-
-        sig_layer = Signature2DPoolingLayer(
-            mode=mode,
-            channels=pen_channel,
-            depth=depth,
-        )
-
-        model.avgpool = sig_layer
-
-        model.fc = nn.Linear(
-            in_features=sig_layer.calculate_feature_dim(), out_features=num_classes
-        )
-
-        return model
-
-    pen_channel = (
-        model.layer2[2].bn2.num_features
-    )  # get the channel just before the last layer; specific to resnet18!!
-
-    sig_layer = Signature2DPoolingLayer(
-        mode=mode,
-        channels=pen_channel,
-        depth=depth,
-    )
-
-    # # stack non-fully-connected layers for dim reduction
-    # model.layer4 = nn.Sequential(
-    #     nn.Conv2d(
-    #         in_channels=pen_channel,
-    #         out_channels=128,
-    #         kernel_size=3,
-    #         stride=1,
-    #         padding=1,
-    #     ),
-    #     nn.BatchNorm2d(128),
-    #     nn.ReLU(inplace=True),
-    #     nn.Conv2d(in_channels=128, out_channels=64, kernel_size=3, stride=1, padding=1),
-    #     nn.BatchNorm2d(64),
-    #     nn.ReLU(inplace=True),
-    #     nn.Conv2d(in_channels=64, out_channels=32, kernel_size=3, stride=1, padding=1),
-    #     nn.BatchNorm2d(32),
-    #     nn.ReLU(inplace=True),
-    #     nn.Conv2d(in_channels=32, out_channels=16, kernel_size=3, stride=1, padding=1),
-    #     nn.BatchNorm2d(16),
-    #     nn.ReLU(inplace=True),
-    #     nn.Conv2d(
-    #         in_channels=16, out_channels=channels, kernel_size=3, stride=1, padding=1
-    #     ),
-    #     nn.BatchNorm2d(channels),
-    #     nn.ReLU(inplace=True),
-    #     sig_layer,
-    # )
-
-    model.layer3 = sig_layer
-
-    model.avgpool = nn.Identity()  # remove the avg pool just before final fc layer
-
-    model.fc = nn.Linear(
-        in_features=sig_layer.calculate_feature_dim(), out_features=num_classes
-    )
-
-    return model
 
 
 def train_model(
-    model_mode: str,
+    model_mode: int,
     train_loader: DataLoader,
     test_loader: DataLoader,
+    sig_mode: str,
+    sig_depth: int,
     batch_size: int,
     epoch: int,
     device: str,
-) -> tuple[nn.Module, dict]:
+) -> tuple[nn.Module, nn.Module]:
     NUM_CLASSES = 10
 
-    if model_mode == ModelMode.BENCHMARK:
-        model = create_benchmark_model(
-            benchmark_model_name="cifar10_resnet20",  # TODO: make this an StrEnum
+    """
+    This is just a demonstration.
+
+    shvsajnvjksabvsa,jvbsjkdfskvf
+    nascdjbvjkavea
+"""
+
+    pretrained_model = load_pretrained_model()
+    pretrained_clone = copy.deepcopy(pretrained_model)
+
+    # print(pretrained_model)
+
+    if model_mode == ModelMode.POOL:
+        model = SignaturedAsPoolingModel(
+            pretrained_model=pretrained_clone,
+            sig_mode=sig_mode,
+            sig_depth=sig_depth,
+            num_classes=NUM_CLASSES,
         )
 
-    elif model_mode == ModelMode.SIGNATURE:
-        model = create_signature_informed_model(
+    elif model_mode == ModelMode.BLOCK:
+        model = SignatureAsBlockModel(
+            pretrained_model=pretrained_clone,
+            sig_mode=sig_mode,
+            sig_depth=sig_depth,
             num_classes=NUM_CLASSES,
-            mode="zhang",
-            depth=1,
-            replace_avgpool=True,
         )
 
     else:
         raise ValueError(
-            f"'model_mode' can only take element in {[m for m in ModelMode]}"
+            f"'model_mode' can only take element in {[m.value for m in ModelMode]}"
         )
 
     print(model)
+
+    # print(model)
     model.to(device=device)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optimizer = torch.optim.Adam(
+        filter(lambda p: p.requires_grad, model.parameters()), lr=0.001
+    )
+    # optimizer = optimizer = torch.optim.SGD(
+    #     filter(lambda p: p.requires_grad, model.parameters()),
+    #     lr=0.1,
+    #     momentum=0.9,
+    #     dampening=0,
+    #     weight_decay=0.0005,
+    #     nesterov=True,
+    # )
+    # scheduler = CosineAnnealingLR(optimizer=optimizer, T_max=200, eta_min=0)
+
     criterion = nn.CrossEntropyLoss()
 
     history = {
+        "epochs": [],
         "train_loss": [],
         "train_accuracy": [],
         "test_loss": [],
@@ -182,6 +108,8 @@ def train_model(
             loss.backward()
 
             optimizer.step()
+
+            # scheduler.step()
 
             # increment the running loss and accuracy
             train_loss += loss.item()
@@ -215,20 +143,20 @@ def train_model(
         history["train_accuracy"].append(train_acc)
         history["test_loss"].append(val_loss)
         history["test_accuracy"].append(val_acc)
+        history["epochs"].append(i + 1)
 
+    artifact_tag = f"model_mode={model_mode}+sig_mode={sig_mode}+sig_depth={sig_depth}+batch_size={batch_size}+epoch={epoch}"
     torch.save(
         obj=model.state_dict(),
-        f=f"./models/{model_mode}_batch_size={batch_size}_epoch={epoch}.pt",
+        f=f"./models/{artifact_tag}.pt",
     )
 
     dump_data(
         data=history,
-        fname=f"history_model={model_mode}_batch_size={batch_size}_epoch={epoch}.pkl",
+        fname=f"{artifact_tag}.pkl",
         path="./data",
     )
 
-    plot_training_pipeline_history(
-        history=history, epoch=epoch, model_mode=model_mode, batch_size=batch_size
-    )
+    plot_training_pipeline_history(history=history, artifact_tag=artifact_tag)
 
-    return None
+    return pretrained_model, model
