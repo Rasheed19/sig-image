@@ -2,9 +2,6 @@ import click
 
 from pipelines import training_pipeline
 from shared.definition import ModelMode, SignatureMode
-from steps import train_model
-
-train_model()
 
 
 @click.command(
