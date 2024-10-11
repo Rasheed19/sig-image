@@ -46,7 +46,7 @@ from shared.definition import ModelMode, SignatureMode
 )
 @click.option(
     "--device",
-    default=2,
+    default="cpu",
     type=click.STRING,
     help="""Specify device to run on.
         """,

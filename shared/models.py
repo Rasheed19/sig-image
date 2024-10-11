@@ -1,5 +1,3 @@
-from collections import OrderedDict
-
 import torch
 import torch.nn as nn
 
@@ -105,7 +103,6 @@ class SignaturedAsPoolingModel(nn.Module):
         return x
 
 
-# TODO: modify this too
 class SignatureAsBlockModel(nn.Module):
     def __init__(
         self,
@@ -121,42 +118,46 @@ class SignatureAsBlockModel(nn.Module):
         for _, param in pretrained_model.named_parameters():
             param.requires_grad = False
 
+        pretrained_model.layer3 = nn.Identity()
+        pretrained_model.avgpool = nn.Identity()
+        pretrained_model.fc = nn.Identity()
+        self.pretrained = pretrained_model
+
+        in_conv_channels = pretrained_model.layer2[2].bn2.num_features
+        #  in_sig_channels = 32  # TODO: play around with this??
+
         sig_layer = Signature2DPoolingLayer(
             sig_mode=sig_mode,
-            channels=pretrained_model.layer2[2].bn2.num_features,
+            channels=in_conv_channels,  # in_sig_channels,
             sig_depth=sig_depth,
             device=device,
         )
         sig_feature_dim = sig_layer.calculate_feature_dim()
 
-        pretrained_model.layer3 = sig_layer
-        pretrained_model.avgpool = (
-            nn.Identity()
-        )  # remove the avg pool just before final fc layer
-        pretrained_model.fc = nn.Identity()  # remove the fc layer
+        self.sig = nn.Sequential(
+            # nn.Conv2d(
+            #     in_conv_channels,
+            #     in_sig_channels,
+            #     kernel_size=(3, 3),
+            #     stride=(1, 1),
+            #     padding=(1, 1),
+            #     bias=False,
+            # ),
+            sig_layer,
+            nn.BatchNorm1d(num_features=sig_feature_dim),
+            nn.Linear(
+                in_features=sig_feature_dim, out_features=sig_feature_dim
+            ),  # TODO: maybe increase the out_features
+        )
 
-        self.model = nn.Sequential(
-            OrderedDict(
-                [
-                    ("pretrained", pretrained_model),
-                    ("batchnorm1d", nn.BatchNorm1d(num_features=sig_feature_dim)),
-                    (
-                        "sig_linear",
-                        nn.Linear(
-                            in_features=sig_feature_dim,
-                            out_features=sig_feature_dim,
-                        ),
-                    ),
-                    (
-                        "fc",
-                        nn.Linear(
-                            in_features=sig_feature_dim,
-                            out_features=num_classes,
-                        ),
-                    ),
-                ]
-            )
+        self.fc = nn.Linear(
+            in_features=sig_feature_dim,
+            out_features=num_classes,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.model(x)
+        x = self.pretrained(x)
+        x = self.sig(x.view(-1, 32, 16, 16))
+        x = self.fc(x)
+
+        return x
