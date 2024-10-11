@@ -44,6 +44,7 @@ def train_model(
             sig_mode=sig_mode,
             sig_depth=sig_depth,
             num_classes=NUM_CLASSES,
+            device=device,
         )
 
     elif model_mode == ModelMode.BLOCK:
@@ -52,6 +53,7 @@ def train_model(
             sig_mode=sig_mode,
             sig_depth=sig_depth,
             num_classes=NUM_CLASSES,
+            device=device,
         )
 
     else:

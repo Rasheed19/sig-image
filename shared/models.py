@@ -19,12 +19,13 @@ def load_pretrained_model() -> nn.Module:
 
 
 class Signature2DPoolingLayer(nn.Module):
-    def __init__(self, sig_mode: str, channels: int, sig_depth: int):
+    def __init__(self, sig_mode: str, channels: int, sig_depth: int, device: str):
         super().__init__()
 
         self.sig_mode = sig_mode
         self.channels = channels
         self.sig_depth = sig_depth
+        self.device = device
 
         if self.sig_mode == SignatureMode.ZHANG:
             self.sig = Zhang2DSignature()
@@ -41,7 +42,9 @@ class Signature2DPoolingLayer(nn.Module):
         )
 
     def forward(self, x):
-        return self.sig.calculate_batch_sig(x=x, depth=self.sig_depth)
+        return self.sig.calculate_batch_sig(x=x, depth=self.sig_depth).to(
+            device=self.device
+        )
 
 
 class SignaturedAsPoolingModel(nn.Module):
@@ -51,6 +54,7 @@ class SignaturedAsPoolingModel(nn.Module):
         sig_mode: str,
         sig_depth: int,
         num_classes: int,
+        device: str,
     ):
         super().__init__()
 
@@ -69,6 +73,7 @@ class SignaturedAsPoolingModel(nn.Module):
             sig_mode=sig_mode,
             channels=in_sig_channels,
             sig_depth=sig_depth,
+            device=device,
         )
         sig_feature_dim = sig_layer.calculate_feature_dim()
         self.sig = nn.Sequential(
@@ -108,20 +113,19 @@ class SignatureAsBlockModel(nn.Module):
         sig_mode: str,
         sig_depth: int,
         num_classes: int,
+        device: str,
     ):
         super().__init__()
 
-        # fix all layers except layer 3 and fc
-        for name, param in pretrained_model.named_parameters():
-            if name.startswith("layer3") or name.startswith("fc"):
-                param.requires_grad = True
-            else:
-                param.requires_grad = False
+        # fix all layers of the pretrained model
+        for _, param in pretrained_model.named_parameters():
+            param.requires_grad = False
 
         sig_layer = Signature2DPoolingLayer(
             sig_mode=sig_mode,
             channels=pretrained_model.layer2[2].bn2.num_features,
             sig_depth=sig_depth,
+            device=device,
         )
         sig_feature_dim = sig_layer.calculate_feature_dim()
 
