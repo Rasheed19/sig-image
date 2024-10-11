@@ -1,5 +1,3 @@
-import torch
-
 from shared.helper import get_logger
 from steps import evaluate_model, load_data, train_model
 
@@ -10,6 +8,7 @@ def training_pipeline(
     sig_depth: int,
     batch_size: int,
     epoch: int,
+    device: str,
 ) -> None:
     logger = get_logger(__name__)
 
@@ -19,7 +18,7 @@ def training_pipeline(
     train_loader, test_loader = load_data(batch_size=batch_size)
 
     logger.info("Training model...")
-    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     pretrained_model, new_model = train_model(
         model_mode=model_mode,
@@ -29,19 +28,21 @@ def training_pipeline(
         sig_depth=sig_depth,
         epoch=epoch,
         batch_size=batch_size,
-        device=DEVICE,
+        device=device,
     )
 
     logger.info("Evaluating pretrained model on test data...")
     pretrained_accuracy = evaluate_model(
         model=pretrained_model,
         test_loader=test_loader,
-        device=DEVICE,
+        device=device,
     )
 
     logger.info("Evaluating new signature-infromed model on test data...")
     new_accuracy = evaluate_model(
-        model=new_model, test_loader=test_loader, device=DEVICE
+        model=new_model,
+        test_loader=test_loader,
+        device=device,
     )
 
     print("Summary of training:")

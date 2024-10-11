@@ -2,6 +2,9 @@ import click
 
 from pipelines import training_pipeline
 from shared.definition import ModelMode, SignatureMode
+from steps import train_model
+
+train_model()
 
 
 @click.command(
@@ -44,12 +47,20 @@ from shared.definition import ModelMode, SignatureMode
     Default to 2.
         """,
 )
+@click.option(
+    "--device",
+    default=2,
+    type=click.STRING,
+    help="""Specify device to run on.
+        """,
+)
 def main(
     model_mode: str,
     sig_mode: str,
     sig_depth: int,
     batch_size: int = 32,
     epoch: int = 2,
+    device: str = "cpu",
 ) -> None:
     training_pipeline(
         model_mode=model_mode,
@@ -57,6 +68,7 @@ def main(
         sig_depth=sig_depth,
         batch_size=batch_size,
         epoch=epoch,
+        device=device,
     )
 
     return None
