@@ -33,10 +33,10 @@ class Zhang2DSignature:
 
     def _second_level_sig(self, image: torch.Tensor) -> list[float]:
         channel = image.shape[0]
-        channel_pairs = list(
-            itertools.product(range(channel), range(channel))
-        )  # TODO: this includes interaction terms
-        # channel_pairs = [(i, i) for i in range(channel)]  # for the case i = j
+        # channel_pairs = list(
+        #     itertools.product(range(channel), range(channel))
+        # )  # TODO: this includes interaction terms
+        channel_pairs = [(i, i) for i in range(channel)]  # for the case i = j
 
         sig = torch.zeros(
             (len(channel_pairs), 4)
@@ -120,12 +120,12 @@ class Zhang2DSignature:
     def calculate_feature_dim(self, channels: int, depth: int) -> int:
         # level 1 + level 2 number of features
         assert depth in (1, 2), "Depth can only take value 1 or 2."
-        return (
-            channels * 2 if depth == 1 else 2 * channels * (1 + 2 * channels)
-        )  # TODO: includes iteraction terms
         # return (
-        #     channels * 2 if depth == 1 else 6 * channels
-        # )  # 2c + 4c when no interaction terms are considered
+        #     channels * 2 if depth == 1 else 2 * channels * (1 + 2 * channels)
+        # )  # TODO: includes iteraction terms
+        return (
+            channels * 2 if depth == 1 else 6 * channels
+        )  # 2c + 4c when no interaction terms are considered
 
 
 class Diehl2DSignature:
@@ -214,9 +214,10 @@ class Diehl2DSignature:
 
 
 if __name__ == "__main__":
-    batch = torch.ones(10000, 8, 8, 8)
+    batch = torch.ones(1, 2, 8, 8)
 
-    zs = Diehl2DSignature()
+    zs = Zhang2DSignature()
     res = zs.calculate_batch_sig(batch, 2)
     print(res)
     print(res.shape)
+    print(zs.calculate_feature_dim(channels=2, depth=2))

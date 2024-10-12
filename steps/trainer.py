@@ -26,13 +26,6 @@ def train_model(
 ) -> tuple[nn.Module, nn.Module]:
     NUM_CLASSES = 10
 
-    """
-    This is just a demonstration.
-
-    shvsajnvjksabvsa,jvbsjkdfskvf
-    nascdjbvjkavea
-"""
-
     pretrained_model = load_pretrained_model()
     pretrained_clone = copy.deepcopy(pretrained_model)
 
